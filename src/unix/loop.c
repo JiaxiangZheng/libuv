@@ -27,6 +27,9 @@
 #include <string.h>
 #include <unistd.h>
 
+/**
+ * 注：调用 uv_loop_init 前需要手工分配 loop 对应的内存，同时注意在最后需要手工回收内存。
+ */
 int uv_loop_init(uv_loop_t* loop) {
   int err;
 

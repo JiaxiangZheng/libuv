@@ -170,6 +170,14 @@ extern "C" {
   XX(GETADDRINFO, getaddrinfo)                                                \
   XX(GETNAMEINFO, getnameinfo)                                                \
 
+/**
+ * 等价于
+ * type enum {
+ *     UV_E2BIG = UV__E2BIG,
+ *     ...,
+ *     UV_ERRNO_MAX = UV__EOF - 1
+ * } uv_errno_t;
+ */
 typedef enum {
 #define XX(code, _) UV_ ## code = UV__ ## code,
   UV_ERRNO_MAP(XX)
@@ -177,6 +185,19 @@ typedef enum {
   UV_ERRNO_MAX = UV__EOF - 1
 } uv_errno_t;
 
+/**
+ * 展开就变成了
+ * typedef enum {
+ *   UV_UNKNOWN_HANDLE = 0,
+ *   UV_ASYNC,
+ *   UV_CHECK,
+ *   UV_FS_EVENT,
+ *   ...
+ *   UV_SIGNAL,
+ *   UV_FILE,
+ *   UV_HANDLE_TYPE_MAX   // 枚举上界
+ * } uv_handle_type;
+ */
 typedef enum {
   UV_UNKNOWN_HANDLE = 0,
 #define XX(uc, lc) UV_##uc,
@@ -186,6 +207,18 @@ typedef enum {
   UV_HANDLE_TYPE_MAX
 } uv_handle_type;
 
+/**
+ * 展开就变成了
+ * typedef enum {
+ *   UV_UNKNOWN_REQ = 0,
+ *   UV_REQ,
+ *   UV_CONNECT,
+ *   ...
+ *   UV_GETNAMEINFO,
+ *   UV_REQ_TYPE_PRIVATE,
+ *   UV_REQ_TYPE_MAX   // 枚举上界
+ * } uv_req_type;
+ */
 typedef enum {
   UV_UNKNOWN_REQ = 0,
 #define XX(uc, lc) UV_##uc,
@@ -195,6 +228,9 @@ typedef enum {
   UV_REQ_TYPE_MAX
 } uv_req_type;
 
+/**
+ * type struct XX_s XX_t 避免每次都写 struct XX_s 作为类型
+ */
 
 /* Handle types. */
 typedef struct uv_loop_s uv_loop_t;
@@ -241,7 +277,7 @@ typedef enum {
   UV_RUN_NOWAIT
 } uv_run_mode;
 
-
+// 由实现文件 .c 实现具体的逻辑
 UV_EXTERN unsigned int uv_version(void);
 UV_EXTERN const char* uv_version_string(void);
 
@@ -250,14 +286,30 @@ typedef void* (*uv_realloc_func)(void* ptr, size_t size);
 typedef void* (*uv_calloc_func)(size_t count, size_t size);
 typedef void (*uv_free_func)(void* ptr);
 
+/**
+ * 提供自定义的内存分配方法，默认使用系统内置方案：
+ *   malloc,
+ *   realloc,
+ *   calloc,
+ *   free
+ */
 UV_EXTERN int uv_replace_allocator(uv_malloc_func malloc_func,
                                    uv_realloc_func realloc_func,
                                    uv_calloc_func calloc_func,
                                    uv_free_func free_func);
 
+/**
+ * uv_default_loop 返回 libuv 内置的一个 uv_loop_t 实例对象 default_loop_struct，
+ * 每一次调用会使用 uv_loop_init 进行初始化，将返回该实例指针（default_loop_ptr = &default_loop_struct）
+ * default_loop 实例是不需要手工释放内存的，它的内存是分配在静态存储区上
+ */
 UV_EXTERN uv_loop_t* uv_default_loop(void);
+/**
+ * 由于 uv_loop_t 类型中部分数据依平台不同而不同，不同平台下 uv_loop_init 的实现不同，分别参考 unix/loop.c 和 win/core.c
+ */
 UV_EXTERN int uv_loop_init(uv_loop_t* loop);
 UV_EXTERN int uv_loop_close(uv_loop_t* loop);
+
 /*
  * NOTE:
  *  This function is DEPRECATED (to be removed after 0.12), users should
@@ -287,6 +339,9 @@ UV_EXTERN uint64_t uv_now(const uv_loop_t*);
 UV_EXTERN int uv_backend_fd(const uv_loop_t*);
 UV_EXTERN int uv_backend_timeout(const uv_loop_t*);
 
+/**
+ * 下面定义了一系列回调函数的类型
+ */
 typedef void (*uv_alloc_cb)(uv_handle_t* handle,
                             size_t suggested_size,
                             uv_buf_t* buf);
@@ -322,7 +377,9 @@ typedef struct {
   long tv_nsec;
 } uv_timespec_t;
 
-
+/**
+ * 文件信息 stat
+ */
 typedef struct {
   uint64_t st_dev;
   uint64_t st_mode;
@@ -374,6 +431,7 @@ UV_EXTERN const char* uv_err_name(int err);
   /* private */                                                               \
   void* active_queue[2];                                                      \
   void* reserved[4];                                                          \
+  /* 又是平台不同的内容，参考 uv-win.h 和 uv-unix.h */
   UV_REQ_PRIVATE_FIELDS                                                       \
 
 /* Abstract base class of all requests. */
@@ -394,6 +452,7 @@ struct uv_shutdown_s {
   UV_REQ_FIELDS
   uv_stream_t* handle;
   uv_shutdown_cb cb;
+  /* 又是平台不同的内容，参考 uv-win.h 和 uv-unix.h */
   UV_SHUTDOWN_PRIVATE_FIELDS
 };
 
@@ -414,6 +473,9 @@ struct uv_shutdown_s {
   UV_HANDLE_PRIVATE_FIELDS                                                    \
 
 /* The abstract base class of all handles. */
+// 注意，这是一个抽象的类，所以后续调用过程中，传入到下面的参数会是它的具体实例
+// 而区分这些实例的方式，就是通过 uv_handle_type type 来进行判断
+// uv_handle_type 本身是一个枚举类型
 struct uv_handle_s {
   UV_HANDLE_FIELDS
 };
@@ -1437,12 +1499,31 @@ union uv_any_handle {
   UV_HANDLE_TYPE_MAP(XX)
 };
 
+/**
+ * uv_an_req 等价于
+ *
+ * union uv_any_req {
+ *   uv_req_t;
+ *   uv_req_t;
+ *   uv_connect_t;
+ *   uv_write_t;
+ *   uv_shutdown_t;
+ *   uv_udp_send_t;
+ *   uv_fs_t;
+ *   uv_work_t;
+ *   uv_getaddrinfo_t;
+ *   uv_getnameinfo_t;
+ * };
+ *
+ */
 union uv_any_req {
   UV_REQ_TYPE_MAP(XX)
 };
 #undef XX
 
-
+/**
+ * uv_loop_s 结构体定义了一堆队列，void* XXX[2] 的都是，这些队列都是会使用 queue.h 中定义的方法进行操作
+ */
 struct uv_loop_s {
   /* User data - use this for whatever. */
   void* data;
@@ -1452,6 +1533,7 @@ struct uv_loop_s {
   void* active_reqs[2];
   /* Internal flag to signal loop stop. */
   unsigned int stop_flag;
+  /* 可以看到，不同的平台 UV_LOOP_PRIVATE_FIELDS 是不一样的，uv-unix.h 和 uv-win.h 中各自有定义*/
   UV_LOOP_PRIVATE_FIELDS
 };
 
